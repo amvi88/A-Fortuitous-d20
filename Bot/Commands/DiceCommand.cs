@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -20,26 +19,30 @@ namespace FortuitousD20.Commands
         public async Task Roll(CommandContext ctx, [RemainingText, Description("The dice to roll.")] string rollConfiguration)
         {
             await ctx.TriggerTypingAsync();
-            if (string.IsNullOrWhiteSpace(rollConfiguration))
+            try 
+            {
+                var diceResults = GetRolls(rollConfiguration);
+                await ctx.RespondAsync($"`[{string.Join(',', diceResults)}] => `**[{diceResults.Sum()}]**");
+            }
+            catch(ArgumentException)
             {
                 await ctx.RespondAsync("Sorry I don´t understand try 1d20 or 1d20kh3 for instance");
-                return;
+            }
+        }
+
+        protected IEnumerable<int> GetRolls(string rollConfiguration)
+        {
+            if (string.IsNullOrWhiteSpace(rollConfiguration))
+            {
+                throw new ArgumentException(nameof(rollConfiguration));
             }
 
             var match = DiceRegex.Match(rollConfiguration);
             if (!match.Success)
             {
-                await ctx.RespondAsync("Sorry I don´t understand try 1d20 or 1d20kh3 for instance");
-                return;
+                throw new ArgumentException(nameof(rollConfiguration));
             }
 
-            var diceResults = GetRolls(match);          
-
-            await ctx.RespondAsync($"`[{string.Join(',', diceResults)}] => **[{diceResults.Sum()}]**`");
-        }
-
-        protected IEnumerable<int> GetRolls(Match match)
-        {
             var numberOfDices = byte.Parse(match.Groups["numberOfDice"].Value);
             var numberOfSides = byte.Parse(match.Groups["numberOfSides"].Value);
             var order = match.Groups.ContainsKey("order") ? match.Groups["order"].Value : null;
