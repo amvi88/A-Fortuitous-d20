@@ -83,6 +83,7 @@ namespace FortuitousD20
             
             while (!_cts.IsCancellationRequested)
             {
+                Console.Out.WriteLine("Waiting");
                 await Task.Delay(TimeSpan.FromMinutes(1));
             }            
         }                
