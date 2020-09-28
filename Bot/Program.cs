@@ -7,6 +7,9 @@ using DSharpPlus;
 using DSharpPlus.CommandsNext;
 using DSharpPlus.Interactivity;
 using Microsoft.Extensions.Configuration;
+using DSharpPlus.Interactivity.Enums;
+using Microsoft.Extensions.DependencyInjection;
+using FortuitousD20.Providers;
 
 namespace FortuitousD20
 {
@@ -15,8 +18,8 @@ namespace FortuitousD20
         private CancellationTokenSource _cts { get; set; }
         private IConfiguration _config;
         private DiscordClient _discord;
-        private CommandsNextModule _commands;
-        private InteractivityModule _interactivity;
+        private CommandsNextExtension _commands;
+        private InteractivityExtension _interactivity;
 
         /* Use the async main to create an instance of the class and await it(async main is only available in C# 7.1 onwards). */
         static async Task Main(string[] args) => await new Program().InitBot(args);
@@ -41,17 +44,16 @@ namespace FortuitousD20
 
                 _interactivity = _discord.UseInteractivity(new InteractivityConfiguration()
                 {
-                    PaginationBehaviour = TimeoutBehaviour.Delete,
-                    PaginationTimeout = TimeSpan.FromSeconds(30),
+                    PaginationBehaviour = PaginationBehaviour.Ignore,
                     Timeout = TimeSpan.FromSeconds(30)
                 });
 
-                var deps = BuildDeps();
+                var deps = RegisterDependencies();
 
                 _commands = _discord.UseCommandsNext(new CommandsNextConfiguration
                 {
-                    StringPrefix = _config.GetValue<string>("discord:CommandPrefix"),
-                    Dependencies = deps
+                    StringPrefixes = new[] { _config.GetValue<string>("discord:CommandPrefix") },
+                    Services = deps
                 });
 
                 _commands.RegisterCommands(typeof(StatusCommand).Assembly);
@@ -65,16 +67,16 @@ namespace FortuitousD20
             }
         }
 
-        private DependencyCollection BuildDeps()
+        private ServiceProvider RegisterDependencies()
         {
-            using var deps = new DependencyCollectionBuilder();
+            var deps = new ServiceCollection()
+                .AddSingleton(_interactivity)
+                .AddSingleton(_cts)
+                .AddSingleton(_config)
+                .AddSingleton(_discord)
+                .AddScoped<IDiceRoller,DiceRoller>();
 
-            deps.AddInstance(_interactivity)
-                .AddInstance(_cts)
-                .AddInstance(_config)
-                .AddInstance(_discord);
-
-            return deps.Build();
+            return deps.BuildServiceProvider();
         }
 
         async Task RunAsync(string[] args)

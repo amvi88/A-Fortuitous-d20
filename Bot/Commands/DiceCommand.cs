@@ -1,18 +1,28 @@
 ﻿using DSharpPlus.CommandsNext;
 using DSharpPlus.CommandsNext.Attributes;
+using FortuitousD20.Providers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography;
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace FortuitousD20.Commands
 {
-    public class DiceCommand
+    public class DiceCommand : BaseCommandModule
     {
-        private static RNGCryptoServiceProvider rngCsp = new RNGCryptoServiceProvider();
-        private Regex DiceRegex = new Regex(@"(?<numberOfDice>\d*)d(?<numberOfSides>\d*)(k(?<order>h|l)(?<selectionNumber>(\d*)))?", RegexOptions.Compiled);
+        private const string RollPattern = @"(?<numberOfDice>\d*)d(?<numberOfSides>\d*)(k(?<order>h|l)(?<selectionNumber>(\d*)))?";
+        private readonly IDiceRoller _diceRoller;
+        private Regex _diceRegex;
+
+
+        public DiceCommand(IDiceRoller diceRoller)
+        {
+            _diceRoller = diceRoller ?? throw new ArgumentNullException(nameof(diceRoller));
+            _diceRegex =  new Regex(RollPattern, RegexOptions.Compiled);
+        }
 
         [Command("roll")]
         [Description("Roll the dice(s)!")]
@@ -21,7 +31,7 @@ namespace FortuitousD20.Commands
             await ctx.TriggerTypingAsync();
             try 
             {
-                var diceResults = GetRolls(rollConfiguration);
+                var diceResults = await GetRolls(rollConfiguration);
                 await ctx.RespondAsync($"`[{string.Join(',', diceResults)}] => `**[{diceResults.Sum()}]**");
             }
             catch(ArgumentException)
@@ -30,14 +40,14 @@ namespace FortuitousD20.Commands
             }
         }
 
-        protected IEnumerable<int> GetRolls(string rollConfiguration)
+        protected async Task<IEnumerable<int>> GetRolls(string rollConfiguration)
         {
             if (string.IsNullOrWhiteSpace(rollConfiguration))
             {
                 throw new ArgumentException(nameof(rollConfiguration));
             }
 
-            var match = DiceRegex.Match(rollConfiguration);
+            var match = _diceRegex.Match(rollConfiguration);
             if (!match.Success)
             {
                 throw new ArgumentException(nameof(rollConfiguration));
@@ -45,44 +55,28 @@ namespace FortuitousD20.Commands
 
             var numberOfDices = byte.Parse(match.Groups["numberOfDice"].Value);
             var numberOfSides = byte.Parse(match.Groups["numberOfSides"].Value);
-            var order = match.Groups.ContainsKey("order") ? match.Groups["order"].Value : null;
-            var selectionNumber = match.Groups.ContainsKey("selectionNumber") ? int.Parse(match.Groups["selectionNumber"].Value) : (int?)null;
-            var diceResults = Enumerable.Range(1, numberOfDices).Select(x => RollDice(numberOfSides)).Select(t => t.Result);
+            var order = match.Groups["order"].Value ?? null;
+
+
+            var selection = match.Groups["selectionNumber"].Value;
+            var selectionNumber = string.IsNullOrWhiteSpace(selection) ? (int?)null : int.Parse(selection);
+
+
+            var diceResults = new List<int>();
+
+            foreach (var index in Enumerable.Range(1, numberOfDices))
+            {
+                var roll = await _diceRoller.RollDice(numberOfSides);
+                diceResults.Add(roll);
+            }
 
             if (!string.IsNullOrEmpty(order) && selectionNumber.HasValue)
             {
-                diceResults = (order == "l") ? diceResults.OrderBy(x => x) : diceResults.OrderByDescending(x => x);
-                diceResults = diceResults.Take(selectionNumber.Value);
+                diceResults = (order == "l") ? diceResults.OrderBy(x => x).ToList() : diceResults.OrderByDescending(x => x).ToList();
+                diceResults = diceResults.Take(selectionNumber.Value).ToList();
             }
 
             return diceResults;
-        }
-
-        private async Task<int> RollDice(byte numberSides)
-        {
-            if (numberSides <= 0)
-            {
-                throw new ArgumentOutOfRangeException("numberSides");
-            }
-
-            // Create a byte array to hold the random value.
-            byte[] randomNumber = new byte[1];
-            do
-            {
-                // Fill the array with a random value.
-                rngCsp.GetBytes(randomNumber);
-            }
-            while (!IsFairRoll(randomNumber[0], numberSides));
-            // Return the random number mod the number
-            // of sides.  The possible values are zero-
-            // based, so we add one.
-            return (int)((randomNumber[0] % numberSides) + 1);
-        }
-
-        private bool IsFairRoll(byte roll, byte numSides)
-        {
-            int fullSetsOfValues = Byte.MaxValue / numSides;
-            return roll < numSides * fullSetsOfValues;
         }
     }
 }

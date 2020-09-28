@@ -4,7 +4,7 @@ using DSharpPlus.CommandsNext.Attributes;
 using System;
 using System.Threading.Tasks;
 
-public class StatusCommand
+public class StatusCommand : BaseCommandModule
 {
     [Command("status")]
     [Description("Simple command tocheck the status of the bot!")]
